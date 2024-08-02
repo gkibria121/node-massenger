@@ -24,17 +24,14 @@ io.on("connection", function (socket) {
   console.log("connect");
 
   socket.on("voice", function (data) {
-    if (data instanceof Buffer) {
-      const base64Data = data.toString('base64');
-      const audioData = `data:audio/ogg;base64,${base64Data}`;
-      
+    if (data instanceof Buffer || data instanceof ArrayBuffer) {
       for (const id in socketsStatus) {
         if (id !== socketId && !socketsStatus[id].mute && socketsStatus[id].online) {
-          socket.broadcast.to(id).emit("send", audioData);
+          socket.broadcast.to(id).emit("send", data);
         }
       }
     } else {
-      console.error("Received data is not a Buffer:", data);
+      console.error("Received data is not a Buffer or ArrayBuffer:", data);
     }
   });
 
@@ -45,6 +42,10 @@ io.on("connection", function (socket) {
 
   socket.on("disconnect", function () {
     delete socketsStatus[socketId];
+  });
+
+  socket.on("error", (error) => {
+    console.error("Socket error:", error);
   });
 });
 

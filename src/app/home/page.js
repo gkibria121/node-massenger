@@ -1,7 +1,9 @@
 "use client"
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
+
 const socketUrl = 'http://localhost:3001'; // Replace with your backend server URL
+
 export default function Home() {
   const [socket, setSocket] = useState(null);
   const [userStatus, setUserStatus] = useState({
@@ -11,9 +13,15 @@ export default function Home() {
     online: false,
   });
   const [users, setUsers] = useState([]);
+  const [volume, setVolume] = useState(1);
 
-  const audioContext = useRef(null);
-  const mediaRecorder = useRef(null);
+  const audioContextRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const gainNodeRef = useRef(null);
+
+  const audioBuffers = [];
+  const bufferSize = 5;  // Adjust based on your needs
 
   useEffect(() => {
     const newSocket = io(socketUrl);  
@@ -26,11 +34,12 @@ export default function Home() {
     });
 
     newSocket.on('send', (audioChunks) => {
-      const audio = new Audio(audioChunks);
-      console.log("audio received");
-      
-      
-      audio.play();
+      audioBuffers.push(audioChunks);
+      if (audioBuffers.length >= bufferSize) {
+        const bufferedAudio = new Blob(audioBuffers, { type: 'audio/webm;codecs=opus' });
+        playReceivedAudio(bufferedAudio);
+        audioBuffers.length = 0;
+      }
     });
 
     return () => newSocket.close();
@@ -42,35 +51,122 @@ export default function Home() {
     }
   }, [userStatus, socket]);
 
-  // Generate username only on the client side
   useEffect(() => {
     const username = `user#${Math.floor(Math.random() * 999999)}`;
     setUserStatus((prev) => ({ ...prev, username }));
   }, []);
 
-  const toggleMicrophone = () => {
-    setUserStatus((prev) => ({ ...prev, microphone: !prev.microphone }));
-    if (!userStatus.microphone) {
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then((stream) => {
-          audioContext.current = new AudioContext();
-          mediaRecorder.current = new MediaRecorder(stream);
-          mediaRecorder.current.start(1000);
+  useEffect(() => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.setValueAtTime(volume, audioContextRef.current.currentTime);
+    }
+  }, [volume]);
 
-          mediaRecorder.current.addEventListener('dataavailable', (event) => {
-            if (event.data.size > 0 && socket) {
-              socket.emit('voice', event.data);
-            }
-          });
+  const playReceivedAudio = async (audioChunks) => {
+    if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+    }
+
+    try {
+        const blob = new Blob([audioChunks], { type: 'audio/webm;codecs=opus' });
+        console.log('Blob size:', blob.size);
+        const arrayBuffer = await blob.arrayBuffer();
+        console.log('ArrayBuffer byteLength:', arrayBuffer.byteLength);
+
+        // Add detailed log for the first few bytes of the ArrayBuffer
+        console.log('ArrayBuffer first few bytes:', new Uint8Array(arrayBuffer).slice(0, 20));
+
+        const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+
+        const source = audioContextRef.current.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContextRef.current.destination);
+        source.start();
+    } catch (error) {
+        console.error('Error playing received audio:', error);
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        if (error.stack) console.error('Error stack:', error.stack);
+    }
+};
+
+  
+  const toggleMicrophone = async () => {
+    setUserStatus((prev) => ({ ...prev, microphone: !prev.microphone }));
+
+    if (!userStatus.microphone) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000,
+          } 
         });
+        streamRef.current = stream;
+
+        if (!audioContextRef.current) {
+          audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 48000,
+          });
+        }
+
+        // if (!gainNodeRef.current) {
+        //   gainNodeRef.current = audioContextRef.current.createGain();
+        //   gainNodeRef.current.connect(audioContextRef.current.destination);
+        // }
+
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : 'audio/webm';
+
+        mediaRecorderRef.current = new MediaRecorder(stream, {
+          mimeType: mimeType,
+          bitsPerSecond: 128000
+        });
+
+        mediaRecorderRef.current.start(100);
+
+        mediaRecorderRef.current.addEventListener('dataavailable', (event) => {
+          if (event.data.size > 0 && socket) {
+            socket.emit('voice', event.data);
+          }
+        });
+
+        mediaRecorderRef.current.addEventListener('error', (error) => {
+          console.error('MediaRecorder error:', error);
+        });
+
+        // Setup local audio monitoring
+        const source = audioContextRef.current.createMediaStreamSource(stream);
+        source.connect(gainNodeRef.current);
+
+      } catch (err) {
+        console.error("Error accessing media devices:", err);
+      }
     } else {
-      mediaRecorder.current?.stop();
-      audioContext.current?.close();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      streamRef.current = null;
     }
   };
 
   const toggleMute = () => {
     setUserStatus((prev) => ({ ...prev, mute: !prev.mute }));
+    if (streamRef.current) {
+      streamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = !userStatus.mute;
+      });
+    }
   };
 
   const toggleConnection = () => {
@@ -101,6 +197,22 @@ export default function Home() {
           >
             {userStatus.online ? 'Go Offline' : 'Go Online'}
           </button>
+        </div>
+        <div className="mt-4">
+          <label htmlFor="volume" className="block text-sm font-medium text-gray-700">
+            Volume
+          </label>
+          <input
+            type="range"
+            id="volume"
+            name="volume"
+            min="0"
+            max="1"
+            step="0.1"
+            value={volume}
+            onChange={(e) => setVolume(parseFloat(e.target.value))}
+            className="mt-1 block w-full"
+          />
         </div>
       </div>
       <h2 className="text-2xl font-bold mt-8">Online Users</h2>
