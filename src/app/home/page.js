@@ -79,7 +79,7 @@ export default function Home() {
       <h1 className="text-4xl font-bold mb-8">Voice Chat App</h1>
       <div className="bg-white p-8 rounded-lg shadow-lg w-80 text-center">
         <p className="text-lg mb-4">Username: {userStatus.username}</p>
-        <div className="space-y-4">
+        <div className="space-y-4 space-x-2">
           <button
             className={`px-4 py-2 rounded text-white ${userStatus.microphone ? 'bg-red-500' : 'bg-green-500'}`}
             onClick={toggleMicrophone}
