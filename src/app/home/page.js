@@ -7,7 +7,7 @@ export default function Home() {
   const [userStatus, setUserStatus] = useState({
     microphone: false,
     mute: false,
-    username: `user#${Math.floor(Math.random() * 999999)}`,
+    username: '',
     online: false,
   });
   const [users, setUsers] = useState([]);
@@ -16,7 +16,7 @@ export default function Home() {
   const mediaRecorder = useRef(null);
 
   useEffect(() => {
-    const newSocket = io();
+    const newSocket = io(); // No need to specify URL, it will use the same domain
     setSocket(newSocket);
 
     newSocket.emit('userInformation', userStatus);
@@ -38,6 +38,12 @@ export default function Home() {
       socket.emit('userInformation', userStatus);
     }
   }, [userStatus, socket]);
+
+  // Generate username only on the client side
+  useEffect(() => {
+    const username = `user#${Math.floor(Math.random() * 999999)}`;
+    setUserStatus((prev) => ({ ...prev, username }));
+  }, []);
 
   const toggleMicrophone = () => {
     setUserStatus((prev) => ({ ...prev, microphone: !prev.microphone }));
@@ -69,24 +75,37 @@ export default function Home() {
   };
 
   return (
-    <div>
-      <h1>Voice Chat App</h1>
-      <div>
-        <p>Username: {userStatus.username}</p>
-        <button onClick={toggleMicrophone}>
-          {userStatus.microphone ? 'Turn Off Microphone' : 'Turn On Microphone'}
-        </button>
-        <button onClick={toggleMute}>
-          {userStatus.mute ? 'Unmute' : 'Mute'}
-        </button>
-        <button onClick={toggleConnection}>
-          {userStatus.online ? 'Go Offline' : 'Go Online'}
-        </button>
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center">
+      <h1 className="text-4xl font-bold mb-8">Voice Chat App</h1>
+      <div className="bg-white p-8 rounded-lg shadow-lg w-80 text-center">
+        <p className="text-lg mb-4">Username: {userStatus.username}</p>
+        <div className="space-y-4">
+          <button
+            className={`px-4 py-2 rounded text-white ${userStatus.microphone ? 'bg-red-500' : 'bg-green-500'}`}
+            onClick={toggleMicrophone}
+          >
+            {userStatus.microphone ? 'Turn Off Microphone' : 'Turn On Microphone'}
+          </button>
+          <button
+            className={`px-4 py-2 rounded text-white ${userStatus.mute ? 'bg-red-500' : 'bg-green-500'}`}
+            onClick={toggleMute}
+          >
+            {userStatus.mute ? 'Unmute' : 'Mute'}
+          </button>
+          <button
+            className={`px-4 py-2 rounded text-white ${userStatus.online ? 'bg-red-500' : 'bg-green-500'}`}
+            onClick={toggleConnection}
+          >
+            {userStatus.online ? 'Go Offline' : 'Go Online'}
+          </button>
+        </div>
       </div>
-      <h2>Online Users</h2>
-      <ul>
+      <h2 className="text-2xl font-bold mt-8">Online Users</h2>
+      <ul className="mt-4 space-y-2">
         {users.map((user, index) => (
-          <li key={index}>{user.username} - {user.online ? 'Online' : 'Offline'}</li>
+          <li key={index} className="bg-white p-4 rounded-lg shadow-md w-80 text-center">
+            {user.username} - {user.online ? 'Online' : 'Offline'}
+          </li>
         ))}
       </ul>
     </div>
