@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
-
+const socketUrl = 'http://localhost:3001'; // Replace with your backend server URL
 export default function Home() {
   const [socket, setSocket] = useState(null);
   const [userStatus, setUserStatus] = useState({
@@ -16,7 +16,7 @@ export default function Home() {
   const mediaRecorder = useRef(null);
 
   useEffect(() => {
-    const newSocket = io(); // No need to specify URL, it will use the same domain
+    const newSocket = io(socketUrl);  
     setSocket(newSocket);
 
     newSocket.emit('userInformation', userStatus);
@@ -27,6 +27,9 @@ export default function Home() {
 
     newSocket.on('send', (audioChunks) => {
       const audio = new Audio(audioChunks);
+      console.log("audio received");
+      
+      
       audio.play();
     });
 
